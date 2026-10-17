@@ -1,4 +1,4 @@
-package gt.edu.cunoc.transporte.fleet_service;
+package com.urbantransport.fleet;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
