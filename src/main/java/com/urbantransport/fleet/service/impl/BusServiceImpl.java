@@ -80,7 +80,6 @@ public class BusServiceImpl implements BusService {
         }
     }
 
-    /** Se acepta hasta el año siguiente al actual (modelos que salen antes de tiempo). */
     private void validateManufactureYear(Integer year) {
         int maxYear = Year.now(zone).getValue() + 1;
         if (year < MIN_MANUFACTURE_YEAR || year > maxYear) {

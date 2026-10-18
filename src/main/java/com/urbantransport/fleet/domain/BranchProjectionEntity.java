@@ -7,7 +7,6 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Copia local de las sucursales de identity, alimentada por BranchCreated/BranchUpdated. */
 @Entity
 @Table(name = "branches_projection")
 @Getter

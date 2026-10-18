@@ -12,10 +12,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Envía a Kafka los eventos pendientes del outbox, en orden. Entrega al menos una vez: si se cae entre el
- * envío y el marcado, el evento sale otra vez y los consumidores lo descartan por su eventId.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -36,7 +32,6 @@ public class OutboxPublisher {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception exception) {
-                // Se corta el lote para conservar el orden; el siguiente ciclo reintenta desde este evento.
                 log.warn("Outbox: no se pudo publicar {} ({}), se reintenta", event.getId(), exception.toString());
                 outboxEventRepository.markFailed(event.getId(), exception.toString());
                 return;

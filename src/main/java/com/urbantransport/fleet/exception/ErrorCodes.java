@@ -10,6 +10,7 @@ public final class ErrorCodes {
     public static final String BRANCH_INACTIVE = "BRANCH_INACTIVE";
     public static final String BRANCH_REQUIRED = "BRANCH_REQUIRED";
     public static final String VALIDATION_ERROR = "VALIDATION_ERROR";
+    public static final String ACCESS_DENIED = "ACCESS_DENIED";
 
     private ErrorCodes() {
     }
