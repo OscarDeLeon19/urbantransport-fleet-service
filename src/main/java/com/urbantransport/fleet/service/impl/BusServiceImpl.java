@@ -5,16 +5,21 @@ import com.urbantransport.fleet.domain.BusEntity;
 import com.urbantransport.fleet.domain.BusStatus;
 import com.urbantransport.fleet.dto.BusResponse;
 import com.urbantransport.fleet.dto.CreateBusRequest;
+import com.urbantransport.fleet.dto.PageResponse;
+import com.urbantransport.fleet.dto.UpdateBusRequest;
 import com.urbantransport.fleet.event.BusEventPayload;
 import com.urbantransport.fleet.event.EventTypes;
 import com.urbantransport.fleet.exception.ApiException;
 import com.urbantransport.fleet.exception.ErrorCodes;
 import com.urbantransport.fleet.repository.BranchProjectionRepository;
 import com.urbantransport.fleet.repository.BusRepository;
+import com.urbantransport.fleet.repository.BusSpecifications;
 import com.urbantransport.fleet.service.BusService;
 import com.urbantransport.fleet.service.OutboxService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +35,7 @@ import java.util.UUID;
 public class BusServiceImpl implements BusService {
 
     private static final int MIN_MANUFACTURE_YEAR = 1950;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final BusRepository busRepository;
     private final BranchProjectionRepository branchProjectionRepository;
@@ -48,7 +54,7 @@ public class BusServiceImpl implements BusService {
                     "Un bus nuevo no puede registrarse EN_TRANSITO");
         }
 
-        String plate = request.plate().trim().toUpperCase(Locale.ROOT);
+        String plate = normalizePlate(request.plate());
         if (busRepository.existsByPlateIgnoreCase(plate)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PLATE_ALREADY_EXISTS,
                     "Ya existe un bus con la placa " + plate);
@@ -71,6 +77,111 @@ public class BusServiceImpl implements BusService {
         outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_REGISTERED, BusEventPayload.fromEntity(bus));
 
         return BusResponse.fromEntity(bus);
+    }
+
+    @Override
+    @Transactional
+    public BusResponse update(UUID id, UpdateBusRequest request, UUID branchId) {
+        BusEntity bus = getOrThrow(id);
+        assertBelongsTo(bus, branchId);
+        if (bus.getStatus() == BusStatus.INACTIVO) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.BUS_INACTIVE, "El bus está inactivo");
+        }
+
+        validateCapacity(request.capacity());
+        validateManufactureYear(request.manufactureYear());
+        BusStatus newStatus = resolveNewStatus(bus.getStatus(), request.status());
+
+        String plate = normalizePlate(request.plate());
+        if (busRepository.existsByPlateIgnoreCaseAndIdNot(plate, bus.getId())) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PLATE_ALREADY_EXISTS,
+                    "Ya existe un bus con la placa " + plate);
+        }
+
+        bus.setPlate(plate);
+        bus.setBrand(request.brand().trim());
+        bus.setModel(request.model().trim());
+        bus.setManufactureYear(request.manufactureYear().shortValue());
+        bus.setCapacity(request.capacity());
+        bus.setPhotoUrl(request.photoUrl());
+        bus.setStatus(newStatus);
+
+        outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_UPDATED, BusEventPayload.fromEntity(bus));
+
+        return BusResponse.fromEntity(bus);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<BusResponse> search(BusStatus status, UUID branchId, int page, int size) {
+        PageRequest pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(size, 1), MAX_PAGE_SIZE),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        return PageResponse.of(busRepository
+                .findAll(BusSpecifications.filter(status, branchId), pageable)
+                .map(BusResponse::fromEntity));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BusResponse findById(UUID id, UUID scopeBranchId) {
+        BusEntity bus = getOrThrow(id);
+        if (scopeBranchId != null) {
+            assertBelongsTo(bus, scopeBranchId);
+        }
+        return BusResponse.fromEntity(bus);
+    }
+
+    @Override
+    @Transactional
+    public BusResponse deactivate(UUID id, UUID branchId) {
+        BusEntity bus = getOrThrow(id);
+        assertBelongsTo(bus, branchId);
+        if (bus.getStatus() == BusStatus.INACTIVO) {
+            return BusResponse.fromEntity(bus);
+        }
+        // TODO: consultar a trip-service si el bus tiene viajes programados o en tránsito; 422 BUS_HAS_ACTIVE_TRIPS si tiene, 503 si trip-service no responde
+        if (bus.getStatus() == BusStatus.EN_TRANSITO) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_HAS_ACTIVE_TRIPS,
+                    "El bus tiene viajes programados o en tránsito");
+        }
+
+        bus.setStatus(BusStatus.INACTIVO);
+        outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_DEACTIVATED, BusEventPayload.fromEntity(bus));
+
+        return BusResponse.fromEntity(bus);
+    }
+
+    private BusEntity getOrThrow(UUID id) {
+        return busRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.BUS_NOT_FOUND, "Bus no encontrado"));
+    }
+
+    private void assertBelongsTo(BusEntity bus, UUID branchId) {
+        if (!bus.getBranchId().equals(branchId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.BUS_NOT_IN_BRANCH,
+                    "El bus no pertenece a tu sucursal");
+        }
+    }
+
+    private BusStatus resolveNewStatus(BusStatus current, BusStatus requested) {
+        if (requested == null || requested == current) {
+            return current;
+        }
+        if (requested != BusStatus.DISPONIBLE && requested != BusStatus.EN_TALLER) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_STATUS,
+                    "Solo se puede cambiar el estado a DISPONIBLE o EN_TALLER");
+        }
+        if (current == BusStatus.EN_TRANSITO) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_IN_TRANSIT,
+                    "El bus está en un viaje en tránsito y no se puede cambiar su estado");
+        }
+        return requested;
+    }
+
+    private String normalizePlate(String plate) {
+        return plate.trim().toUpperCase(Locale.ROOT);
     }
 
     private void validateCapacity(Integer capacity) {
