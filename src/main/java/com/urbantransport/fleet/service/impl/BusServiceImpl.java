@@ -1,6 +1,5 @@
 package com.urbantransport.fleet.service.impl;
 
-import com.urbantransport.fleet.domain.BranchProjectionEntity;
 import com.urbantransport.fleet.domain.BusEntity;
 import com.urbantransport.fleet.domain.BusStatus;
 import com.urbantransport.fleet.dto.BusResponse;
@@ -11,9 +10,9 @@ import com.urbantransport.fleet.event.BusEventPayload;
 import com.urbantransport.fleet.event.EventTypes;
 import com.urbantransport.fleet.exception.ApiException;
 import com.urbantransport.fleet.exception.ErrorCodes;
-import com.urbantransport.fleet.repository.BranchProjectionRepository;
 import com.urbantransport.fleet.repository.BusRepository;
 import com.urbantransport.fleet.repository.BusSpecifications;
+import com.urbantransport.fleet.service.BranchProjectionService;
 import com.urbantransport.fleet.service.BusService;
 import com.urbantransport.fleet.service.OutboxService;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +37,7 @@ public class BusServiceImpl implements BusService {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final BusRepository busRepository;
-    private final BranchProjectionRepository branchProjectionRepository;
+    private final BranchProjectionService branchProjectionService;
     private final OutboxService outboxService;
 
     @Value("${app.zone:America/Guatemala}")
@@ -60,7 +59,7 @@ public class BusServiceImpl implements BusService {
                     "Ya existe un bus con la placa " + plate);
         }
 
-        assertBranchActive(branchId);
+        branchProjectionService.assertActive(branchId);
 
         BusEntity bus = busRepository.save(BusEntity.builder()
                 .plate(plate)
@@ -138,8 +137,10 @@ public class BusServiceImpl implements BusService {
     public BusResponse deactivate(UUID id, UUID branchId) {
         BusEntity bus = getOrThrow(id);
         assertBelongsTo(bus, branchId);
+
         if (bus.getStatus() == BusStatus.INACTIVO) {
-            return BusResponse.fromEntity(bus);
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_INACTIVE,
+                    "El bus ya fue desactivado");
         }
         // TODO: consultar a trip-service si el bus tiene viajes programados o en tránsito; 422 BUS_HAS_ACTIVE_TRIPS si tiene, 503 si trip-service no responde
         if (bus.getStatus() == BusStatus.EN_TRANSITO) {
@@ -196,15 +197,6 @@ public class BusServiceImpl implements BusService {
         if (year < MIN_MANUFACTURE_YEAR || year > maxYear) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_YEAR,
                     "El año debe estar entre " + MIN_MANUFACTURE_YEAR + " y " + maxYear);
-        }
-    }
-
-    private void assertBranchActive(UUID branchId) {
-        BranchProjectionEntity branch = branchProjectionRepository.findById(branchId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.BRANCH_NOT_FOUND,
-                        "Sucursal no encontrada"));
-        if (!branch.isActive()) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.BRANCH_INACTIVE, "La sucursal está inactiva");
         }
     }
 }

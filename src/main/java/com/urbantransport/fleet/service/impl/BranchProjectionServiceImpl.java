@@ -5,7 +5,10 @@ import com.urbantransport.fleet.domain.ProcessedEventEntity;
 import com.urbantransport.fleet.repository.BranchProjectionRepository;
 import com.urbantransport.fleet.repository.ProcessedEventRepository;
 import com.urbantransport.fleet.service.BranchProjectionService;
+import com.urbantransport.fleet.exception.ApiException;
+import com.urbantransport.fleet.exception.ErrorCodes;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,5 +44,16 @@ public class BranchProjectionServiceImpl implements BranchProjectionService {
                 .build());
 
         log.info("Sucursal {} sincronizada desde {}", branchId, eventType);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void assertActive(UUID branchId) {
+        BranchProjectionEntity branch = branchProjectionRepository.findById(branchId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.BRANCH_NOT_FOUND,
+                        "Sucursal no encontrada"));
+        if (!branch.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.BRANCH_INACTIVE, "La sucursal está inactiva");
+        }
     }
 }

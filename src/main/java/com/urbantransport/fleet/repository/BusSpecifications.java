@@ -3,16 +3,16 @@ package com.urbantransport.fleet.repository;
 import com.urbantransport.fleet.domain.BusEntity;
 import com.urbantransport.fleet.domain.BusStatus;
 import jakarta.persistence.criteria.Predicate;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BusSpecifications {
-
-    private BusSpecifications() {
-    }
 
     public static Specification<BusEntity> filter(BusStatus status, UUID branchId) {
         return (root, criteriaQuery, cb) -> {

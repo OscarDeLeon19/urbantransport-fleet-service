@@ -28,6 +28,9 @@ public class BusController {
 
     private final BusService busService;
 
+    // TODO: subida de foto multipart del bus (guardar en app.storage.photos-dir y actualizar photoUrl)
+    // TODO: endpoint interno GET /internal/buses/{id}/validate para trip-service, protegido con X-Internal-Key
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('BRANCH_ADMIN')")
