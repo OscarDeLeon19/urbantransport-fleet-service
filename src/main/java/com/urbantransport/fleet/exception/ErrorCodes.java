@@ -23,6 +23,10 @@ public final class ErrorCodes {
     public static final String BUS_HAS_ACTIVE_TRIPS = "BUS_HAS_ACTIVE_TRIPS";
     public static final String LICENSE_ALREADY_EXISTS = "LICENSE_ALREADY_EXISTS";
     public static final String LICENSE_EXPIRED = "LICENSE_EXPIRED";
+    public static final String DRIVER_NOT_FOUND = "DRIVER_NOT_FOUND";
+    public static final String DRIVER_NOT_IN_BRANCH = "DRIVER_NOT_IN_BRANCH";
+    public static final String DRIVER_INACTIVE = "DRIVER_INACTIVE";
+    public static final String DRIVER_HAS_ACTIVE_TRIPS = "DRIVER_HAS_ACTIVE_TRIPS";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
     public static final String IDENTITY_UNAVAILABLE = "IDENTITY_UNAVAILABLE";
     public static final String IDENTITY_ERROR = "IDENTITY_ERROR";

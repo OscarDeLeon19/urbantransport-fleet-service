@@ -15,6 +15,8 @@ public final class EventTypes {
     public static final String AGGREGATE_DRIVER = "Driver";
 
     public static final String DRIVER_REGISTERED = "DriverRegistered";
+    public static final String DRIVER_UPDATED = "DriverUpdated";
+    public static final String DRIVER_DEACTIVATED = "DriverDeactivated";
 
     public static final String BRANCH_CREATED = "BranchCreated";
     public static final String BRANCH_UPDATED = "BranchUpdated";

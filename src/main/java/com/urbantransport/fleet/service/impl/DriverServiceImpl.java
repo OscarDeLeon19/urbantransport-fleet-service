@@ -8,11 +8,14 @@ import com.urbantransport.fleet.domain.LicenseAlertEntity;
 import com.urbantransport.fleet.dto.CreateDriverRequest;
 import com.urbantransport.fleet.dto.DriverCreatedResponse;
 import com.urbantransport.fleet.dto.DriverResponse;
+import com.urbantransport.fleet.dto.PageResponse;
+import com.urbantransport.fleet.dto.UpdateDriverRequest;
 import com.urbantransport.fleet.event.DriverEventPayload;
 import com.urbantransport.fleet.event.EventTypes;
 import com.urbantransport.fleet.exception.ApiException;
 import com.urbantransport.fleet.exception.ErrorCodes;
 import com.urbantransport.fleet.repository.DriverRepository;
+import com.urbantransport.fleet.repository.DriverSpecifications;
 import com.urbantransport.fleet.repository.LicenseAlertRepository;
 import com.urbantransport.fleet.service.BranchProjectionService;
 import com.urbantransport.fleet.service.DriverService;
@@ -21,8 +24,11 @@ import com.urbantransport.fleet.util.PasswordGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
@@ -37,6 +43,7 @@ import java.util.UUID;
 public class DriverServiceImpl implements DriverService {
 
     private static final List<Integer> ALERT_DAYS_BEFORE = List.of(30, 15, 3);
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final DriverRepository driverRepository;
     private final LicenseAlertRepository licenseAlertRepository;
@@ -82,6 +89,109 @@ public class DriverServiceImpl implements DriverService {
                     account.id(), driverId, exception);
             throw exception;
         }
+    }
+
+    @Override
+    @Transactional
+    public DriverResponse update(UUID id, UpdateDriverRequest request, UUID branchId) {
+        DriverEntity driver = getOwnedOrThrow(id, branchId);
+        if (!driver.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DRIVER_INACTIVE, "El chofer está inactivo");
+        }
+
+        LocalDate today = LocalDate.now(zone);
+        boolean expirationChanged = !request.licenseExpiresOn().equals(driver.getLicenseExpiresOn());
+        if (expirationChanged && request.licenseExpiresOn().isBefore(today)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.LICENSE_EXPIRED,
+                    "La licencia ya está vencida");
+        }
+
+        String licenseNumber = request.licenseNumber().trim().toUpperCase(Locale.ROOT);
+        if (driverRepository.existsByLicenseNumberIgnoreCaseAndIdNot(licenseNumber, driver.getId())) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.LICENSE_ALREADY_EXISTS,
+                    "Ya existe un chofer con la licencia " + licenseNumber);
+        }
+
+        driver.setLicenseNumber(licenseNumber);
+        driver.setLicenseType(request.licenseType());
+        driver.setLicenseExpiresOn(request.licenseExpiresOn());
+        driver.setPhone(request.phone().trim());
+        driver.setBaseSalaryPerTrip(request.baseSalaryPerTrip());
+
+        if (expirationChanged) {
+            licenseAlertRepository.deletePendingByDriverId(driver.getId());
+            createLicenseAlerts(driver, today);
+        }
+
+        outboxService.record(EventTypes.AGGREGATE_DRIVER, driver.getId(), EventTypes.DRIVER_UPDATED,
+                DriverEventPayload.fromEntity(driver));
+
+        return DriverResponse.fromEntity(driver);
+    }
+
+    @Override
+    @Transactional
+    public DriverResponse deactivate(UUID id, UUID branchId) {
+        DriverEntity driver = getOwnedOrThrow(id, branchId);
+        if (!driver.isActive()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.DRIVER_INACTIVE,
+                    "El chofer ya fue desactivado");
+        }
+        // TODO: consultar a trip-service si el chofer tiene viajes programados o en tránsito; 422 DRIVER_HAS_ACTIVE_TRIPS si tiene, 503 si trip-service no responde
+
+        driver.setActive(false);
+        outboxService.record(EventTypes.AGGREGATE_DRIVER, driver.getId(), EventTypes.DRIVER_DEACTIVATED,
+                DriverEventPayload.fromEntity(driver));
+
+        return DriverResponse.fromEntity(driver);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<DriverResponse> search(Boolean active, Integer expiringInDays, UUID branchId,
+                                               int page, int size) {
+        LocalDate expiresFrom = null;
+        LocalDate expiresTo = null;
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+        if (expiringInDays != null) {
+            if (expiringInDays < 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR,
+                        "expiringInDays no puede ser negativo");
+            }
+            expiresFrom = LocalDate.now(zone);
+            expiresTo = expiresFrom.plusDays(expiringInDays);
+            sort = Sort.by(Sort.Direction.ASC, "licenseExpiresOn");
+        }
+        PageRequest pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(size, 1), MAX_PAGE_SIZE),
+                sort);
+        return PageResponse.of(driverRepository
+                .findAll(DriverSpecifications.filter(active, expiresFrom, expiresTo, branchId), pageable)
+                .map(DriverResponse::fromEntity));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DriverResponse findById(UUID id, UUID scopeBranchId) {
+        if (scopeBranchId != null) {
+            return DriverResponse.fromEntity(getOwnedOrThrow(id, scopeBranchId));
+        }
+        return DriverResponse.fromEntity(getOrThrow(id));
+    }
+
+    private DriverEntity getOrThrow(UUID id) {
+        return driverRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.DRIVER_NOT_FOUND, "Chofer no encontrado"));
+    }
+
+    private DriverEntity getOwnedOrThrow(UUID id, UUID branchId) {
+        DriverEntity driver = getOrThrow(id);
+        if (!driver.getBranchId().equals(branchId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.DRIVER_NOT_IN_BRANCH,
+                    "El chofer no pertenece a tu sucursal");
+        }
+        return driver;
     }
 
     private DriverEntity complete(UUID driverId, IdentityUserResponse account) {

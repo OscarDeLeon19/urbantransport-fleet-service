@@ -13,4 +13,8 @@ public interface LicenseAlertRepository extends JpaRepository<LicenseAlertEntity
     @Modifying
     @Query("delete from LicenseAlertEntity a where a.driverId = :driverId")
     void deleteByDriverId(@Param("driverId") UUID driverId);
+
+    @Modifying
+    @Query("delete from LicenseAlertEntity a where a.driverId = :driverId and a.sentAt is null")
+    void deletePendingByDriverId(@Param("driverId") UUID driverId);
 }
