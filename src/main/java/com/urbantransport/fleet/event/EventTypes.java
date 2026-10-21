@@ -18,6 +18,12 @@ public final class EventTypes {
     public static final String DRIVER_UPDATED = "DriverUpdated";
     public static final String DRIVER_DEACTIVATED = "DriverDeactivated";
 
+    public static final String AGGREGATE_ROUTE = "Route";
+
+    public static final String ROUTE_CREATED = "RouteCreated";
+    public static final String ROUTE_UPDATED = "RouteUpdated";
+    public static final String ROUTE_DELETED = "RouteDeleted";
+
     public static final String BRANCH_CREATED = "BranchCreated";
     public static final String BRANCH_UPDATED = "BranchUpdated";
 

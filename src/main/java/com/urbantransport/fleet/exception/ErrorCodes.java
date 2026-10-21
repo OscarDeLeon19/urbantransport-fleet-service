@@ -30,4 +30,10 @@ public final class ErrorCodes {
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
     public static final String IDENTITY_UNAVAILABLE = "IDENTITY_UNAVAILABLE";
     public static final String IDENTITY_ERROR = "IDENTITY_ERROR";
+    public static final String SAME_ORIGIN_DESTINATION = "SAME_ORIGIN_DESTINATION";
+    public static final String DESTINATION_BRANCH_INVALID = "DESTINATION_BRANCH_INVALID";
+    public static final String ROUTE_ALREADY_EXISTS = "ROUTE_ALREADY_EXISTS";
+    public static final String ROUTE_NOT_FOUND = "ROUTE_NOT_FOUND";
+    public static final String ROUTE_NOT_IN_BRANCH = "ROUTE_NOT_IN_BRANCH";
+    public static final String ROUTE_HAS_TRIPS = "ROUTE_HAS_TRIPS";
 }

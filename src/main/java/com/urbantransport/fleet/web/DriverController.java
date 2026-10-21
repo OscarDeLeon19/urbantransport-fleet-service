@@ -29,6 +29,7 @@ public class DriverController {
     private final DriverService driverService;
 
     // TODO: subida de foto multipart del chofer (guardar en app.storage.photos-dir y actualizar photoUrl)
+    // TODO: endpoint interno GET /internal/drivers/{id}/validate para trip-service, protegido con X-Internal-Key (activo, licencia vigente y sucursal)
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
