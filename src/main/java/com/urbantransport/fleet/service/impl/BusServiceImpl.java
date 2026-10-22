@@ -2,6 +2,7 @@ package com.urbantransport.fleet.service.impl;
 
 import com.urbantransport.fleet.domain.BusEntity;
 import com.urbantransport.fleet.domain.BusStatus;
+import com.urbantransport.fleet.domain.PhotoOwner;
 import com.urbantransport.fleet.dto.BusResponse;
 import com.urbantransport.fleet.dto.CreateBusRequest;
 import com.urbantransport.fleet.dto.PageResponse;
@@ -15,6 +16,7 @@ import com.urbantransport.fleet.repository.BusSpecifications;
 import com.urbantransport.fleet.service.BranchProjectionService;
 import com.urbantransport.fleet.service.BusService;
 import com.urbantransport.fleet.service.OutboxService;
+import com.urbantransport.fleet.service.PhotoStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -22,6 +24,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.Year;
@@ -39,6 +43,8 @@ public class BusServiceImpl implements BusService {
     private final BusRepository busRepository;
     private final BranchProjectionService branchProjectionService;
     private final OutboxService outboxService;
+    private final PhotoStorageService photoStorageService;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${app.zone:America/Guatemala}")
     private ZoneId zone;
@@ -47,6 +53,7 @@ public class BusServiceImpl implements BusService {
     @Transactional
     public BusResponse create(CreateBusRequest request, UUID branchId) {
         validateCapacity(request.capacity());
+        validateSeatLayout(request.capacity(), request.seatRows(), request.seatColumns(), request.aisleAfterColumn());
         validateManufactureYear(request.manufactureYear());
         if (request.status() == BusStatus.EN_TRANSITO) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_STATUS,
@@ -67,15 +74,17 @@ public class BusServiceImpl implements BusService {
                 .model(request.model().trim())
                 .manufactureYear(request.manufactureYear().shortValue())
                 .capacity(request.capacity())
+                .seatRows(request.seatRows().shortValue())
+                .seatColumns(request.seatColumns().shortValue())
+                .aisleAfterColumn(toShort(request.aisleAfterColumn()))
                 .status(request.status())
                 .odometerKm(request.odometerKm() != null ? request.odometerKm() : BigDecimal.ZERO)
-                .photoUrl(request.photoUrl())
                 .branchId(branchId)
                 .build());
 
         outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_REGISTERED, BusEventPayload.fromEntity(bus));
 
-        return BusResponse.fromEntity(bus);
+        return toResponse(bus);
     }
 
     @Override
@@ -88,6 +97,7 @@ public class BusServiceImpl implements BusService {
         }
 
         validateCapacity(request.capacity());
+        validateSeatLayout(request.capacity(), request.seatRows(), request.seatColumns(), request.aisleAfterColumn());
         validateManufactureYear(request.manufactureYear());
         BusStatus newStatus = resolveNewStatus(bus.getStatus(), request.status());
 
@@ -102,12 +112,14 @@ public class BusServiceImpl implements BusService {
         bus.setModel(request.model().trim());
         bus.setManufactureYear(request.manufactureYear().shortValue());
         bus.setCapacity(request.capacity());
-        bus.setPhotoUrl(request.photoUrl());
+        bus.setSeatRows(request.seatRows().shortValue());
+        bus.setSeatColumns(request.seatColumns().shortValue());
+        bus.setAisleAfterColumn(toShort(request.aisleAfterColumn()));
         bus.setStatus(newStatus);
 
         outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_UPDATED, BusEventPayload.fromEntity(bus));
 
-        return BusResponse.fromEntity(bus);
+        return toResponse(bus);
     }
 
     @Override
@@ -119,7 +131,7 @@ public class BusServiceImpl implements BusService {
                 Sort.by(Sort.Direction.DESC, "createdAt"));
         return PageResponse.of(busRepository
                 .findAll(BusSpecifications.filter(status, branchId), pageable)
-                .map(BusResponse::fromEntity));
+                .map(this::toResponse));
     }
 
     @Override
@@ -129,7 +141,7 @@ public class BusServiceImpl implements BusService {
         if (scopeBranchId != null) {
             assertBelongsTo(bus, scopeBranchId);
         }
-        return BusResponse.fromEntity(bus);
+        return toResponse(bus);
     }
 
     @Override
@@ -151,7 +163,38 @@ public class BusServiceImpl implements BusService {
         bus.setStatus(BusStatus.INACTIVO);
         outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_DEACTIVATED, BusEventPayload.fromEntity(bus));
 
-        return BusResponse.fromEntity(bus);
+        return toResponse(bus);
+    }
+
+    @Override
+    public BusResponse uploadPhoto(UUID id, MultipartFile file, UUID branchId) {
+        BusEntity bus = getOrThrow(id);
+        assertBelongsTo(bus, branchId);
+        if (bus.getStatus() == BusStatus.INACTIVO) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.BUS_INACTIVE, "El bus está inactivo");
+        }
+
+        String previousKey = bus.getPhotoUrl();
+        String key = photoStorageService.upload(PhotoOwner.BUS, bus.getId(), file);
+
+        BusEntity updated;
+        try {
+            updated = transactionTemplate.execute(status -> {
+                BusEntity current = getOrThrow(id);
+                current.setPhotoUrl(key);
+                return current;
+            });
+        } catch (RuntimeException exception) {
+            photoStorageService.delete(key);
+            throw exception;
+        }
+
+        photoStorageService.delete(previousKey);
+        return toResponse(updated);
+    }
+
+    private BusResponse toResponse(BusEntity bus) {
+        return BusResponse.fromEntity(bus, photoStorageService.presignedUrl(bus.getPhotoUrl()));
     }
 
     private BusEntity getOrThrow(UUID id) {
@@ -190,6 +233,22 @@ public class BusServiceImpl implements BusService {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CAPACITY,
                     "La capacidad debe ser mayor a cero");
         }
+    }
+
+    private void validateSeatLayout(Integer capacity, Integer seatRows, Integer seatColumns, Integer aisleAfterColumn) {
+        int seats = seatRows * seatColumns;
+        if (seats != capacity) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CAPACITY,
+                    "La capacidad debe ser igual a filas × columnas (" + seats + ")");
+        }
+        if (aisleAfterColumn != null && aisleAfterColumn >= seatColumns) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_SEAT_LAYOUT,
+                    "El pasillo debe ir después de una columna entre 1 y " + (seatColumns - 1));
+        }
+    }
+
+    private Short toShort(Integer value) {
+        return value == null ? null : value.shortValue();
     }
 
     private void validateManufactureYear(Integer year) {

@@ -9,6 +9,8 @@ public record UpdateBusRequest(
         @NotBlank @Size(max = 60) String model,
         @NotNull Integer manufactureYear,
         @NotNull Integer capacity,
-        BusStatus status,
-        @Size(max = 500) String photoUrl) {
+        @NotNull @Positive @Max(50) Integer seatRows,
+        @NotNull @Positive @Max(10) Integer seatColumns,
+        @Positive Integer aisleAfterColumn,
+        BusStatus status) {
 }

@@ -9,6 +9,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.Instant;
 import java.util.stream.Collectors;
@@ -40,6 +42,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException exception,
                                                             HttpServletRequest request) {
         return build(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "No tienes permiso para esta operación", request);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadSize(MaxUploadSizeExceededException exception,
+                                                          HttpServletRequest request) {
+        return build(HttpStatus.CONTENT_TOO_LARGE, ErrorCodes.PHOTO_TOO_LARGE,
+                "La foto supera el tamaño máximo de 5MB", request);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ErrorResponse> handleMissingPart(MissingServletRequestPartException exception,
+                                                           HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_PHOTO, "La foto es obligatoria", request);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

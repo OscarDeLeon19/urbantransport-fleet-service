@@ -11,10 +11,12 @@ import com.urbantransport.fleet.service.BusService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,7 +30,6 @@ public class BusController {
 
     private final BusService busService;
 
-    // TODO: subida de foto multipart del bus (guardar en app.storage.photos-dir y actualizar photoUrl)
     // TODO: endpoint interno GET /internal/buses/{id}/validate para trip-service, protegido con X-Internal-Key
 
     @PostMapping
@@ -49,6 +50,13 @@ public class BusController {
     @PreAuthorize("hasRole('BRANCH_ADMIN')")
     public BusResponse deactivate(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return busService.deactivate(id, branchIdOf(jwt));
+    }
+
+    @PostMapping(value = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('BRANCH_ADMIN')")
+    public BusResponse uploadPhoto(@PathVariable UUID id, @RequestPart("file") MultipartFile file,
+                                   @AuthenticationPrincipal Jwt jwt) {
+        return busService.uploadPhoto(id, file, branchIdOf(jwt));
     }
 
     @GetMapping

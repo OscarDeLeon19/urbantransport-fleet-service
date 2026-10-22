@@ -5,6 +5,7 @@ import com.urbantransport.fleet.client.IdentityCreateUserRequest;
 import com.urbantransport.fleet.client.IdentityUserResponse;
 import com.urbantransport.fleet.domain.DriverEntity;
 import com.urbantransport.fleet.domain.LicenseAlertEntity;
+import com.urbantransport.fleet.domain.PhotoOwner;
 import com.urbantransport.fleet.dto.CreateDriverRequest;
 import com.urbantransport.fleet.dto.DriverCreatedResponse;
 import com.urbantransport.fleet.dto.DriverResponse;
@@ -20,6 +21,7 @@ import com.urbantransport.fleet.repository.LicenseAlertRepository;
 import com.urbantransport.fleet.service.BranchProjectionService;
 import com.urbantransport.fleet.service.DriverService;
 import com.urbantransport.fleet.service.OutboxService;
+import com.urbantransport.fleet.service.PhotoStorageService;
 import com.urbantransport.fleet.util.PasswordGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +32,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -51,6 +54,7 @@ public class DriverServiceImpl implements DriverService {
     private final OutboxService outboxService;
     private final IdentityClient identityClient;
     private final TransactionTemplate transactionTemplate;
+    private final PhotoStorageService photoStorageService;
 
     @Value("${app.zone:America/Guatemala}")
     private ZoneId zone;
@@ -83,7 +87,7 @@ public class DriverServiceImpl implements DriverService {
 
         try {
             DriverEntity driver = transactionTemplate.execute(status -> complete(driverId, account));
-            return new DriverCreatedResponse(DriverResponse.fromEntity(driver), temporaryPassword);
+            return new DriverCreatedResponse(toResponse(driver), temporaryPassword);
         } catch (RuntimeException exception) {
             log.error("Cuenta {} creada en identity para el chofer {} pero no se pudo completar el registro local",
                     account.id(), driverId, exception);
@@ -126,7 +130,7 @@ public class DriverServiceImpl implements DriverService {
         outboxService.record(EventTypes.AGGREGATE_DRIVER, driver.getId(), EventTypes.DRIVER_UPDATED,
                 DriverEventPayload.fromEntity(driver));
 
-        return DriverResponse.fromEntity(driver);
+        return toResponse(driver);
     }
 
     @Override
@@ -143,7 +147,7 @@ public class DriverServiceImpl implements DriverService {
         outboxService.record(EventTypes.AGGREGATE_DRIVER, driver.getId(), EventTypes.DRIVER_DEACTIVATED,
                 DriverEventPayload.fromEntity(driver));
 
-        return DriverResponse.fromEntity(driver);
+        return toResponse(driver);
     }
 
     @Override
@@ -168,16 +172,46 @@ public class DriverServiceImpl implements DriverService {
                 sort);
         return PageResponse.of(driverRepository
                 .findAll(DriverSpecifications.filter(active, expiresFrom, expiresTo, branchId), pageable)
-                .map(DriverResponse::fromEntity));
+                .map(this::toResponse));
     }
 
     @Override
     @Transactional(readOnly = true)
     public DriverResponse findById(UUID id, UUID scopeBranchId) {
         if (scopeBranchId != null) {
-            return DriverResponse.fromEntity(getOwnedOrThrow(id, scopeBranchId));
+            return toResponse(getOwnedOrThrow(id, scopeBranchId));
         }
-        return DriverResponse.fromEntity(getOrThrow(id));
+        return toResponse(getOrThrow(id));
+    }
+
+    @Override
+    public DriverResponse uploadPhoto(UUID id, MultipartFile file, UUID branchId) {
+        DriverEntity driver = getOwnedOrThrow(id, branchId);
+        if (!driver.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DRIVER_INACTIVE, "El chofer está inactivo");
+        }
+
+        String previousKey = driver.getPhotoUrl();
+        String key = photoStorageService.upload(PhotoOwner.DRIVER, driver.getId(), file);
+
+        DriverEntity updated;
+        try {
+            updated = transactionTemplate.execute(status -> {
+                DriverEntity current = getOrThrow(id);
+                current.setPhotoUrl(key);
+                return current;
+            });
+        } catch (RuntimeException exception) {
+            photoStorageService.delete(key);
+            throw exception;
+        }
+
+        photoStorageService.delete(previousKey);
+        return toResponse(updated);
+    }
+
+    private DriverResponse toResponse(DriverEntity driver) {
+        return DriverResponse.fromEntity(driver, photoStorageService.presignedUrl(driver.getPhotoUrl()));
     }
 
     private DriverEntity getOrThrow(UUID id) {

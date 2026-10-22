@@ -37,6 +37,15 @@ public class BusEntity {
     @Column(nullable = false)
     private Integer capacity;
 
+    @Column(name = "seat_rows")
+    private Short seatRows;
+
+    @Column(name = "seat_columns")
+    private Short seatColumns;
+
+    @Column(name = "aisle_after_column")
+    private Short aisleAfterColumn;
+
     @Column(name = "photo_url", length = 500)
     private String photoUrl;
 

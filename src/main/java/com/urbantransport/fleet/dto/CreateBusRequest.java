@@ -11,7 +11,9 @@ public record CreateBusRequest(
         @NotBlank @Size(max = 60) String model,
         @NotNull Integer manufactureYear,
         @NotNull Integer capacity,
+        @NotNull @Positive @Max(50) Integer seatRows,
+        @NotNull @Positive @Max(10) Integer seatColumns,
+        @Positive Integer aisleAfterColumn,
         @NotNull BusStatus status,
-        @PositiveOrZero @Digits(integer = 10, fraction = 2) BigDecimal odometerKm,
-        @Size(max = 500) String photoUrl) {
+        @PositiveOrZero @Digits(integer = 10, fraction = 2) BigDecimal odometerKm) {
 }

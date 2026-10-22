@@ -16,13 +16,16 @@ public class BusResponse {
     String model;
     int manufactureYear;
     int capacity;
+    Short seatRows;
+    Short seatColumns;
+    Short aisleAfterColumn;
     String photoUrl;
     BusStatus status;
     BigDecimal odometerKm;
     UUID branchId;
     Instant createdAt;
 
-    public static BusResponse fromEntity(BusEntity bus) {
+    public static BusResponse fromEntity(BusEntity bus, String photoUrl) {
         return new BusResponse(
                 bus.getId(),
                 bus.getPlate(),
@@ -30,7 +33,10 @@ public class BusResponse {
                 bus.getModel(),
                 bus.getManufactureYear(),
                 bus.getCapacity(),
-                bus.getPhotoUrl(),
+                bus.getSeatRows(),
+                bus.getSeatColumns(),
+                bus.getAisleAfterColumn(),
+                photoUrl,
                 bus.getStatus(),
                 bus.getOdometerKm(),
                 bus.getBranchId(),

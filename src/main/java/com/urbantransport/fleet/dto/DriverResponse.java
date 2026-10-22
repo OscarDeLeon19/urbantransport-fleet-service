@@ -25,7 +25,7 @@ public class DriverResponse {
     boolean active;
     Instant createdAt;
 
-    public static DriverResponse fromEntity(DriverEntity driver) {
+    public static DriverResponse fromEntity(DriverEntity driver, String photoUrl) {
         return new DriverResponse(
                 driver.getId(),
                 driver.getUserId(),
@@ -36,7 +36,7 @@ public class DriverResponse {
                 driver.getPhone(),
                 driver.getEmail(),
                 driver.getBaseSalaryPerTrip(),
-                driver.getPhotoUrl(),
+                photoUrl,
                 driver.getBranchId(),
                 driver.isActive(),
                 driver.getCreatedAt());
