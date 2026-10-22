@@ -1,0 +1,3 @@
+ALTER TABLE buses ADD COLUMN seat_rows SMALLINT;
+ALTER TABLE buses ADD COLUMN seat_columns SMALLINT;
+ALTER TABLE buses ADD COLUMN aisle_after_column SMALLINT;

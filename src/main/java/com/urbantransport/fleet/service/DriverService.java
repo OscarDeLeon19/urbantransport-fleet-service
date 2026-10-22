@@ -5,6 +5,7 @@ import com.urbantransport.fleet.dto.DriverCreatedResponse;
 import com.urbantransport.fleet.dto.DriverResponse;
 import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.UpdateDriverRequest;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -19,4 +20,6 @@ public interface DriverService {
     PageResponse<DriverResponse> search(Boolean active, Integer expiringInDays, UUID branchId, int page, int size);
 
     DriverResponse findById(UUID id, UUID scopeBranchId);
+
+    DriverResponse uploadPhoto(UUID id, MultipartFile file, UUID branchId);
 }

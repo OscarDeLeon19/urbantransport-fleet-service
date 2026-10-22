@@ -11,10 +11,12 @@ import com.urbantransport.fleet.service.DriverService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,7 +30,6 @@ public class DriverController {
 
     private final DriverService driverService;
 
-    // TODO: subida de foto multipart del chofer (guardar en app.storage.photos-dir y actualizar photoUrl)
     // TODO: endpoint interno GET /internal/drivers/{id}/validate para trip-service, protegido con X-Internal-Key (activo, licencia vigente y sucursal)
 
     @PostMapping
@@ -49,6 +50,13 @@ public class DriverController {
     @PreAuthorize("hasRole('BRANCH_ADMIN')")
     public DriverResponse deactivate(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return driverService.deactivate(id, branchIdOf(jwt));
+    }
+
+    @PostMapping(value = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('BRANCH_ADMIN')")
+    public DriverResponse uploadPhoto(@PathVariable UUID id, @RequestPart("file") MultipartFile file,
+                                      @AuthenticationPrincipal Jwt jwt) {
+        return driverService.uploadPhoto(id, file, branchIdOf(jwt));
     }
 
     @GetMapping
