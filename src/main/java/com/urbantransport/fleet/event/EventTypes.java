@@ -27,5 +27,6 @@ public final class EventTypes {
     public static final String BRANCH_CREATED = "BranchCreated";
     public static final String BRANCH_UPDATED = "BranchUpdated";
 
-    // TODO: consumir eventos de trip-events: TripCompleted para sumar odometerKm y los de inicio/fin de viaje para pasar el bus a EN_TRANSITO y de vuelta a DISPONIBLE
+    public static final String TRIP_STARTED = "TripStarted";
+    public static final String TRIP_COMPLETED = "TripCompleted";
 }

@@ -1,8 +1,10 @@
 package com.urbantransport.fleet.service.impl;
 
+import com.urbantransport.fleet.client.TripClient;
 import com.urbantransport.fleet.domain.BusEntity;
 import com.urbantransport.fleet.domain.BusStatus;
 import com.urbantransport.fleet.domain.PhotoOwner;
+import com.urbantransport.fleet.domain.ProcessedEventEntity;
 import com.urbantransport.fleet.dto.BusResponse;
 import com.urbantransport.fleet.dto.CreateBusRequest;
 import com.urbantransport.fleet.dto.PageResponse;
@@ -13,11 +15,13 @@ import com.urbantransport.fleet.exception.ApiException;
 import com.urbantransport.fleet.exception.ErrorCodes;
 import com.urbantransport.fleet.repository.BusRepository;
 import com.urbantransport.fleet.repository.BusSpecifications;
+import com.urbantransport.fleet.repository.ProcessedEventRepository;
 import com.urbantransport.fleet.service.BranchProjectionService;
 import com.urbantransport.fleet.service.BusService;
 import com.urbantransport.fleet.service.OutboxService;
 import com.urbantransport.fleet.service.PhotoStorageService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -31,8 +35,10 @@ import java.math.BigDecimal;
 import java.time.Year;
 import java.time.ZoneId;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BusServiceImpl implements BusService {
@@ -45,6 +51,8 @@ public class BusServiceImpl implements BusService {
     private final OutboxService outboxService;
     private final PhotoStorageService photoStorageService;
     private final TransactionTemplate transactionTemplate;
+    private final TripClient tripClient;
+    private final ProcessedEventRepository processedEventRepository;
 
     @Value("${app.zone:America/Guatemala}")
     private ZoneId zone;
@@ -88,8 +96,19 @@ public class BusServiceImpl implements BusService {
     }
 
     @Override
-    @Transactional
     public BusResponse update(UUID id, UpdateBusRequest request, UUID branchId) {
+        BusEntity current = getOrThrow(id);
+        assertBelongsTo(current, branchId);
+        if (seatLayoutChanges(current, request) && tripClient.countActiveTripsByBus(id) > 0) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.SEAT_LAYOUT_LOCKED,
+                    "No se puede cambiar la capacidad ni la disposición de asientos de un bus con viajes programados o en tránsito");
+        }
+
+        BusEntity bus = transactionTemplate.execute(status -> applyUpdate(id, request, branchId));
+        return toResponse(bus);
+    }
+
+    private BusEntity applyUpdate(UUID id, UpdateBusRequest request, UUID branchId) {
         BusEntity bus = getOrThrow(id);
         assertBelongsTo(bus, branchId);
         if (bus.getStatus() == BusStatus.INACTIVO) {
@@ -119,7 +138,14 @@ public class BusServiceImpl implements BusService {
 
         outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_UPDATED, BusEventPayload.fromEntity(bus));
 
-        return toResponse(bus);
+        return bus;
+    }
+
+    private boolean seatLayoutChanges(BusEntity bus, UpdateBusRequest request) {
+        return !Objects.equals(bus.getCapacity(), request.capacity())
+                || !Objects.equals(bus.getSeatRows(), toShort(request.seatRows()))
+                || !Objects.equals(bus.getSeatColumns(), toShort(request.seatColumns()))
+                || !Objects.equals(bus.getAisleAfterColumn(), toShort(request.aisleAfterColumn()));
     }
 
     @Override
@@ -145,25 +171,86 @@ public class BusServiceImpl implements BusService {
     }
 
     @Override
-    @Transactional
     public BusResponse deactivate(UUID id, UUID branchId) {
-        BusEntity bus = getOrThrow(id);
-        assertBelongsTo(bus, branchId);
-
-        if (bus.getStatus() == BusStatus.INACTIVO) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_INACTIVE,
-                    "El bus ya fue desactivado");
-        }
-        // TODO: consultar a trip-service si el bus tiene viajes programados o en tránsito; 422 BUS_HAS_ACTIVE_TRIPS si tiene, 503 si trip-service no responde
-        if (bus.getStatus() == BusStatus.EN_TRANSITO) {
+        BusEntity current = getOrThrow(id);
+        assertBelongsTo(current, branchId);
+        assertCanDeactivate(current);
+        if (tripClient.countActiveTripsByBus(id) > 0) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_HAS_ACTIVE_TRIPS,
                     "El bus tiene viajes programados o en tránsito");
         }
 
-        bus.setStatus(BusStatus.INACTIVO);
-        outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_DEACTIVATED, BusEventPayload.fromEntity(bus));
+        BusEntity bus = transactionTemplate.execute(status -> {
+            BusEntity locked = getOrThrow(id);
+            assertCanDeactivate(locked);
+            locked.setStatus(BusStatus.INACTIVO);
+            outboxService.record(EventTypes.AGGREGATE_BUS, locked.getId(), EventTypes.BUS_DEACTIVATED,
+                    BusEventPayload.fromEntity(locked));
+            return locked;
+        });
 
         return toResponse(bus);
+    }
+
+    @Override
+    @Transactional
+    public void applyTripStarted(UUID eventId, String eventType, UUID busId) {
+        if (processedEventRepository.existsById(eventId)) {
+            log.debug("Evento {} ya procesado, se ignora", eventId);
+            return;
+        }
+
+        busRepository.findById(busId).ifPresentOrElse(bus -> {
+            if (bus.getStatus() == BusStatus.INACTIVO) {
+                log.warn("El bus {} está inactivo y recibió {}; no se cambia su estado", busId, eventType);
+                return;
+            }
+            bus.setStatus(BusStatus.EN_TRANSITO);
+            outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_UPDATED,
+                    BusEventPayload.fromEntity(bus));
+        }, () -> log.warn("{} para el bus {} que no existe en fleet", eventType, busId));
+
+        markProcessed(eventId, eventType);
+    }
+
+    @Override
+    @Transactional
+    public void applyTripCompleted(UUID eventId, String eventType, UUID busId, BigDecimal odometerEnd) {
+        if (processedEventRepository.existsById(eventId)) {
+            log.debug("Evento {} ya procesado, se ignora", eventId);
+            return;
+        }
+
+        busRepository.findById(busId).ifPresentOrElse(bus -> {
+            if (odometerEnd != null && odometerEnd.compareTo(bus.getOdometerKm()) > 0) {
+                bus.setOdometerKm(odometerEnd);
+            }
+            if (bus.getStatus() == BusStatus.EN_TRANSITO) {
+                bus.setStatus(BusStatus.DISPONIBLE);
+            }
+            outboxService.record(EventTypes.AGGREGATE_BUS, bus.getId(), EventTypes.BUS_UPDATED,
+                    BusEventPayload.fromEntity(bus));
+        }, () -> log.warn("{} para el bus {} que no existe en fleet", eventType, busId));
+
+        markProcessed(eventId, eventType);
+    }
+
+    private void markProcessed(UUID eventId, String eventType) {
+        processedEventRepository.save(ProcessedEventEntity.builder()
+                .eventId(eventId)
+                .eventType(eventType)
+                .build());
+    }
+
+    private void assertCanDeactivate(BusEntity bus) {
+        if (bus.getStatus() == BusStatus.INACTIVO) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_INACTIVE,
+                    "El bus ya fue desactivado");
+        }
+        if (bus.getStatus() == BusStatus.EN_TRANSITO) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.BUS_HAS_ACTIVE_TRIPS,
+                    "El bus tiene viajes programados o en tránsito");
+        }
     }
 
     @Override
