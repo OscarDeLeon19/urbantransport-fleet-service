@@ -30,8 +30,6 @@ public class DriverController {
 
     private final DriverService driverService;
 
-    // TODO: endpoint interno GET /internal/drivers/{id}/validate para trip-service, protegido con X-Internal-Key (activo, licencia vigente y sucursal)
-
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('BRANCH_ADMIN')")

@@ -40,4 +40,7 @@ public final class ErrorCodes {
     public static final String INVALID_PHOTO = "INVALID_PHOTO";
     public static final String STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE";
     public static final String PHOTO_TOO_LARGE = "PHOTO_TOO_LARGE";
+    public static final String SEAT_LAYOUT_LOCKED = "SEAT_LAYOUT_LOCKED";
+    public static final String TRIP_UNAVAILABLE = "TRIP_UNAVAILABLE";
+    public static final String TRIP_ERROR = "TRIP_ERROR";
 }

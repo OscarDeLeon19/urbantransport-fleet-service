@@ -7,6 +7,7 @@ import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.UpdateBusRequest;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 public interface BusService {
@@ -22,4 +23,8 @@ public interface BusService {
     BusResponse deactivate(UUID id, UUID branchId);
 
     BusResponse uploadPhoto(UUID id, MultipartFile file, UUID branchId);
+
+    void applyTripStarted(UUID eventId, String eventType, UUID busId);
+
+    void applyTripCompleted(UUID eventId, String eventType, UUID busId, BigDecimal odometerEnd);
 }

@@ -21,5 +21,7 @@ public interface DriverService {
 
     DriverResponse findById(UUID id, UUID scopeBranchId);
 
+    DriverResponse findByUserId(UUID userId);
+
     DriverResponse uploadPhoto(UUID id, MultipartFile file, UUID branchId);
 }

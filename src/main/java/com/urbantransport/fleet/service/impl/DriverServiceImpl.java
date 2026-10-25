@@ -3,6 +3,7 @@ package com.urbantransport.fleet.service.impl;
 import com.urbantransport.fleet.client.IdentityClient;
 import com.urbantransport.fleet.client.IdentityCreateUserRequest;
 import com.urbantransport.fleet.client.IdentityUserResponse;
+import com.urbantransport.fleet.client.TripClient;
 import com.urbantransport.fleet.domain.DriverEntity;
 import com.urbantransport.fleet.domain.LicenseAlertEntity;
 import com.urbantransport.fleet.domain.PhotoOwner;
@@ -55,6 +56,7 @@ public class DriverServiceImpl implements DriverService {
     private final IdentityClient identityClient;
     private final TransactionTemplate transactionTemplate;
     private final PhotoStorageService photoStorageService;
+    private final TripClient tripClient;
 
     @Value("${app.zone:America/Guatemala}")
     private ZoneId zone;
@@ -134,20 +136,30 @@ public class DriverServiceImpl implements DriverService {
     }
 
     @Override
-    @Transactional
     public DriverResponse deactivate(UUID id, UUID branchId) {
-        DriverEntity driver = getOwnedOrThrow(id, branchId);
+        assertActive(getOwnedOrThrow(id, branchId));
+        if (tripClient.countActiveTripsByDriver(id) > 0) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.DRIVER_HAS_ACTIVE_TRIPS,
+                    "El chofer tiene viajes programados o en tránsito");
+        }
+
+        DriverEntity driver = transactionTemplate.execute(status -> {
+            DriverEntity locked = getOwnedOrThrow(id, branchId);
+            assertActive(locked);
+            locked.setActive(false);
+            outboxService.record(EventTypes.AGGREGATE_DRIVER, locked.getId(), EventTypes.DRIVER_DEACTIVATED,
+                    DriverEventPayload.fromEntity(locked));
+            return locked;
+        });
+
+        return toResponse(driver);
+    }
+
+    private void assertActive(DriverEntity driver) {
         if (!driver.isActive()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.DRIVER_INACTIVE,
                     "El chofer ya fue desactivado");
         }
-        // TODO: consultar a trip-service si el chofer tiene viajes programados o en tránsito; 422 DRIVER_HAS_ACTIVE_TRIPS si tiene, 503 si trip-service no responde
-
-        driver.setActive(false);
-        outboxService.record(EventTypes.AGGREGATE_DRIVER, driver.getId(), EventTypes.DRIVER_DEACTIVATED,
-                DriverEventPayload.fromEntity(driver));
-
-        return toResponse(driver);
     }
 
     @Override
@@ -182,6 +194,13 @@ public class DriverServiceImpl implements DriverService {
             return toResponse(getOwnedOrThrow(id, scopeBranchId));
         }
         return toResponse(getOrThrow(id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DriverResponse findByUserId(UUID userId) {
+        return toResponse(driverRepository.findByUserId(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.DRIVER_NOT_FOUND, "Chofer no encontrado")));
     }
 
     @Override

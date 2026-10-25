@@ -30,8 +30,6 @@ public class BusController {
 
     private final BusService busService;
 
-    // TODO: endpoint interno GET /internal/buses/{id}/validate para trip-service, protegido con X-Internal-Key
-
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('BRANCH_ADMIN')")

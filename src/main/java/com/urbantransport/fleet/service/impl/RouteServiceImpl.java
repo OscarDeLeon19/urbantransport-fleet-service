@@ -1,8 +1,10 @@
 package com.urbantransport.fleet.service.impl;
 
+import com.urbantransport.fleet.client.TripClient;
 import com.urbantransport.fleet.domain.BranchProjectionEntity;
 import com.urbantransport.fleet.domain.RouteEntity;
 import com.urbantransport.fleet.dto.CreateRouteRequest;
+import com.urbantransport.fleet.dto.InternalRouteResponse;
 import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.RouteResponse;
 import com.urbantransport.fleet.dto.UpdateRouteRequest;
@@ -22,6 +24,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -36,6 +39,8 @@ public class RouteServiceImpl implements RouteService {
         private final BranchProjectionRepository branchProjectionRepository;
         private final BranchProjectionService branchProjectionService;
         private final OutboxService outboxService;
+        private final TripClient tripClient;
+        private final TransactionTemplate transactionTemplate;
 
         @Override
         @Transactional
@@ -84,17 +89,21 @@ public class RouteServiceImpl implements RouteService {
         }
 
         @Override
-        @Transactional
         public void delete(UUID id, UUID branchId) {
-                RouteEntity route = getOwnedOrThrow(id, branchId);
-                // TODO: consultar a trip-service si la ruta tiene viajes asociados; 422
-                // ROUTE_HAS_TRIPS si tiene, 503 si trip-service no responde
+                getOwnedOrThrow(id, branchId);
+                if (tripClient.countTripsByRoute(id) > 0) {
+                        throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.ROUTE_HAS_TRIPS,
+                                        "La ruta tiene viajes asociados y no se puede eliminar");
+                }
 
-                route.setDeleted(true);
-                route.setDeletedAt(Instant.now());
+                transactionTemplate.executeWithoutResult(status -> {
+                        RouteEntity route = getOwnedOrThrow(id, branchId);
+                        route.setDeleted(true);
+                        route.setDeletedAt(Instant.now());
 
-                outboxService.record(EventTypes.AGGREGATE_ROUTE, route.getId(), EventTypes.ROUTE_DELETED,
-                                RouteEventPayload.fromEntity(route));
+                        outboxService.record(EventTypes.AGGREGATE_ROUTE, route.getId(), EventTypes.ROUTE_DELETED,
+                                        RouteEventPayload.fromEntity(route));
+                });
         }
 
         @Override
@@ -113,6 +122,20 @@ public class RouteServiceImpl implements RouteService {
         @Transactional(readOnly = true)
         public RouteResponse findById(UUID id) {
                 return RouteResponse.fromEntity(getOrThrow(id));
+        }
+
+        @Override
+        @Transactional(readOnly = true)
+        public InternalRouteResponse findInternalById(UUID id) {
+                RouteEntity route = getOrThrow(id);
+                return InternalRouteResponse.fromEntity(route, branchNameOf(route.getOriginBranchId()),
+                                branchNameOf(route.getDestinationBranchId()));
+        }
+
+        private String branchNameOf(UUID branchId) {
+                return branchProjectionRepository.findById(branchId)
+                                .map(BranchProjectionEntity::getName)
+                                .orElse(null);
         }
 
         private RouteEntity getOrThrow(UUID id) {

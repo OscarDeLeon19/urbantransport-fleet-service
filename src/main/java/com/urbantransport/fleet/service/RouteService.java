@@ -1,6 +1,7 @@
 package com.urbantransport.fleet.service;
 
 import com.urbantransport.fleet.dto.CreateRouteRequest;
+import com.urbantransport.fleet.dto.InternalRouteResponse;
 import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.RouteResponse;
 import com.urbantransport.fleet.dto.UpdateRouteRequest;
@@ -18,4 +19,6 @@ public interface RouteService {
     PageResponse<RouteResponse> search(UUID originBranchId, UUID destinationBranchId, int page, int size);
 
     RouteResponse findById(UUID id);
+
+    InternalRouteResponse findInternalById(UUID id);
 }

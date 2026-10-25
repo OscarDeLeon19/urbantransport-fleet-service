@@ -10,7 +10,7 @@ public record UpdateBusRequest(
         @NotNull Integer manufactureYear,
         @NotNull Integer capacity,
         @NotNull @Positive @Max(50) Integer seatRows,
-        @NotNull @Positive @Max(10) Integer seatColumns,
+        @NotNull @Positive @Max(6) Integer seatColumns,
         @Positive Integer aisleAfterColumn,
         BusStatus status) {
 }
