@@ -8,7 +8,6 @@ import com.urbantransport.fleet.domain.DriverEntity;
 import com.urbantransport.fleet.domain.LicenseAlertEntity;
 import com.urbantransport.fleet.domain.PhotoOwner;
 import com.urbantransport.fleet.dto.CreateDriverRequest;
-import com.urbantransport.fleet.dto.DriverCreatedResponse;
 import com.urbantransport.fleet.dto.DriverResponse;
 import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.UpdateDriverRequest;
@@ -23,7 +22,6 @@ import com.urbantransport.fleet.service.BranchProjectionService;
 import com.urbantransport.fleet.service.DriverService;
 import com.urbantransport.fleet.service.OutboxService;
 import com.urbantransport.fleet.service.PhotoStorageService;
-import com.urbantransport.fleet.util.PasswordGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,7 +60,7 @@ public class DriverServiceImpl implements DriverService {
     private ZoneId zone;
 
     @Override
-    public DriverCreatedResponse register(CreateDriverRequest request, UUID branchId) {
+    public DriverResponse register(CreateDriverRequest request, UUID branchId) {
         LocalDate today = LocalDate.now(zone);
         if (request.licenseExpiresOn().isBefore(today)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.LICENSE_EXPIRED,
@@ -74,11 +72,10 @@ public class DriverServiceImpl implements DriverService {
         UUID driverId = transactionTemplate.execute(status ->
                 prepare(request, licenseNumber, email, branchId, today).getId());
 
-        String temporaryPassword = PasswordGenerator.temporary();
         IdentityUserResponse account;
         try {
             account = identityClient.createDriverUser(new IdentityCreateUserRequest(
-                    email, temporaryPassword, request.fullName().trim()));
+                    email, request.fullName().trim()));
         } catch (RuntimeException exception) {
             transactionTemplate.executeWithoutResult(status -> {
                 licenseAlertRepository.deleteByDriverId(driverId);
@@ -89,7 +86,7 @@ public class DriverServiceImpl implements DriverService {
 
         try {
             DriverEntity driver = transactionTemplate.execute(status -> complete(driverId, account));
-            return new DriverCreatedResponse(toResponse(driver), temporaryPassword);
+            return toResponse(driver);
         } catch (RuntimeException exception) {
             log.error("Cuenta {} creada en identity para el chofer {} pero no se pudo completar el registro local",
                     account.id(), driverId, exception);
