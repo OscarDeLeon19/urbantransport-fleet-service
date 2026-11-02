@@ -1,7 +1,6 @@
 package com.urbantransport.fleet.web;
 
 import com.urbantransport.fleet.dto.CreateDriverRequest;
-import com.urbantransport.fleet.dto.DriverCreatedResponse;
 import com.urbantransport.fleet.dto.DriverResponse;
 import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.UpdateDriverRequest;
@@ -33,7 +32,7 @@ public class DriverController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('BRANCH_ADMIN')")
-    public DriverCreatedResponse register(@Valid @RequestBody CreateDriverRequest request, @AuthenticationPrincipal Jwt jwt) {
+    public DriverResponse register(@Valid @RequestBody CreateDriverRequest request, @AuthenticationPrincipal Jwt jwt) {
         return driverService.register(request, branchIdOf(jwt));
     }
 

@@ -9,7 +9,6 @@ import com.urbantransport.fleet.domain.LicenseAlertEntity;
 import com.urbantransport.fleet.domain.LicenseType;
 import com.urbantransport.fleet.domain.PhotoOwner;
 import com.urbantransport.fleet.dto.CreateDriverRequest;
-import com.urbantransport.fleet.dto.DriverCreatedResponse;
 import com.urbantransport.fleet.dto.DriverResponse;
 import com.urbantransport.fleet.dto.PageResponse;
 import com.urbantransport.fleet.dto.UpdateDriverRequest;
@@ -150,7 +149,7 @@ class DriverServiceImplTest {
             when(driverRepository.findById(DRIVER_ID)).thenAnswer(invocation -> Optional.ofNullable(persisted));
             when(identityClient.createDriverUser(any())).thenReturn(account());
 
-            DriverCreatedResponse response = driverService.register(createRequest(EXPIRES_ON), BRANCH_ID);
+            DriverResponse response = driverService.register(createRequest(EXPIRES_ON), BRANCH_ID);
 
             verify(branchProjectionService).assertActive(BRANCH_ID);
             verify(driverRepository).save(driverCaptor.capture());
@@ -170,13 +169,11 @@ class DriverServiceImplTest {
             IdentityCreateUserRequest identityRequest = identityRequestCaptor.getValue();
             assertEquals(EMAIL, identityRequest.email());
             assertEquals(FULL_NAME, identityRequest.fullName());
-            assertEquals(12, identityRequest.password().length());
-            assertEquals(identityRequest.password(), response.getTemporaryPassword());
 
             verify(outboxService).record(EventTypes.AGGREGATE_DRIVER, DRIVER_ID, EventTypes.DRIVER_REGISTERED,
                     DriverEventPayload.fromEntity(saved));
-            assertEquals(DRIVER_ID, response.getDriver().getId());
-            assertEquals(USER_ID, response.getDriver().getUserId());
+            assertEquals(DRIVER_ID, response.getId());
+            assertEquals(USER_ID, response.getUserId());
         }
 
         @ParameterizedTest

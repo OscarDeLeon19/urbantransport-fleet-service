@@ -44,8 +44,7 @@ class IdentityClientImplTest {
     private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final String EMAIL = "juan@mail.com";
     private static final String FULL_NAME = "Juan Pérez";
-    private static final String PASSWORD = "Temporal#123";
-    private static final IdentityCreateUserRequest REQUEST = new IdentityCreateUserRequest(EMAIL, PASSWORD, FULL_NAME);
+    private static final IdentityCreateUserRequest REQUEST = new IdentityCreateUserRequest(EMAIL, FULL_NAME);
 
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
@@ -81,7 +80,7 @@ class IdentityClientImplTest {
                 .andExpect(header("X-Internal-Key", API_KEY))
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.email").value(EMAIL))
-                .andExpect(jsonPath("$.password").value(PASSWORD))
+                .andExpect(jsonPath("$.password").doesNotExist())
                 .andExpect(jsonPath("$.fullName").value(FULL_NAME))
                 .andRespond(withSuccess("""
                         {"id":"%s","email":"%s","fullName":"%s","role":"DRIVER","active":true}
