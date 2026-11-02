@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.hasLength;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -63,14 +62,14 @@ class DriverApiIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createJson("lic-001", expiresOn)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.driver.licenseNumber").value("LIC-001"))
-                .andExpect(jsonPath("$.driver.email").value("juan@mail.com"))
-                .andExpect(jsonPath("$.driver.userId").value(ACCOUNT_ID.toString()))
-                .andExpect(jsonPath("$.driver.active").value(true))
-                .andExpect(jsonPath("$.temporaryPassword", hasLength(12)))
+                .andExpect(jsonPath("$.licenseNumber").value("LIC-001"))
+                .andExpect(jsonPath("$.email").value("juan@mail.com"))
+                .andExpect(jsonPath("$.userId").value(ACCOUNT_ID.toString()))
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.temporaryPassword").doesNotExist())
                 .andReturn();
 
-        UUID driverId = idAt(result, "$.driver.id");
+        UUID driverId = idAt(result, "$.id");
         DriverEntity saved = driverRepository.findById(driverId).orElseThrow();
         assertEquals(ACCOUNT_ID, saved.getUserId());
         assertEquals(branchId, saved.getBranchId());
